@@ -1,6 +1,6 @@
 replicaCount: 1
 image:
-  repository: deestarmi/nginx-demo
+  repository: deestar08/nginx-demo
   tag: "v1.0-initial"
   pullPolicy: "Always"
 service:

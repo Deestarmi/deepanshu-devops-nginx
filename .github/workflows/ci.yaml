@@ -35,11 +35,11 @@ jobs:
     
     - name: Build Docker image
       run: |
-        docker build -t deestarmi/nginx-demo:${{ steps.tag.outputs.IMAGE_TAG }} .
+        docker build -t deestar08/nginx-demo:${{ steps.tag.outputs.IMAGE_TAG }} .
     
     - name: Push to Docker Hub
       run: |  
-        docker push deestarmi/nginx-demo:${{steps.tag.outputs.IMAGE_TAG}}
+        docker push deestar08/nginx-demo:${{steps.tag.outputs.IMAGE_TAG}}
 
     - name: Update the Helm values.yaml with new image tag
       run: |
