@@ -91,12 +91,14 @@ jobs:
     - name: Sync ArgoCD app
       run: |
         argocd app sync nginx-demo \
-          --insecure \
-          --grpc-web \
-          --watch
+        --insecure \
+        --grpc-web \
+        --timeout 120
 
     - name: Verify app health
       run: |
-        argocd app get nginx-demo \
-          --insecure \
-          --grpc-web
+        argocd app wait nginx-demo \
+        --health \
+        --timeout 120 \
+        --insecure \
+        --grpc-web
