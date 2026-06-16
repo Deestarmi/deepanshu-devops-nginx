@@ -92,7 +92,7 @@ jobs:
       run: |
         argocd repo add https://github.com/${{ github.repository }} \
         --username ${{ github.repository_owner }} \
-        --password ${{ secrets.GITHUB_PAT }} \
+        --password ${{ secrets.GIT_PAT }} \
         --insecure \
         --grpc-web \
         --upsert
