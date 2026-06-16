@@ -87,6 +87,14 @@ jobs:
         mkdir -p ~/.kube
         echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
         kubectl apply -f argocd/argocd.yaml
+    
+    - name: Register repo with ArgoCD
+      run: |
+        argocd repo add https://github.com/${{ github.repository }} \
+        --insecure \
+        --grpc-web \
+        --upsert
+
 
     - name: Sync ArgoCD app
       run: |
