@@ -3,5 +3,3 @@ kind: Namespace
 metadata:
   name: {{.Release.Name}}
   namespace: {{.Values.namespace}}
-spec:
-  replicas: {{.Values.replicaCount}}  
