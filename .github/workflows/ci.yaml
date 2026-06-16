@@ -5,6 +5,7 @@ on:
     paths:
     - 'app/**'    # only trigger when you changes app files
     - 'Dockerfile'
+    - 'VERSION'
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
