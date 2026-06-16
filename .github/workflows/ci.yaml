@@ -100,6 +100,8 @@ jobs:
 
     - name: Sync ArgoCD app
       run: |
+        # Force ArgoCD to re-authenticate and fetch the latest commit refs
+        argocd app get nginx-demo --refresh --insecure --grpc-web
         argocd app sync nginx-demo \
         --insecure \
         --grpc-web \
