@@ -74,6 +74,12 @@ jobs:
         chmod +x /usr/local/bin/argocd
         argocd version --client
 
+    - name: Terminate any stuck operation
+      run: |
+        argocd app terminate-op nginx-demo \
+        --insecure \
+        --grpc-web || true
+
     - name: Login to ArgoCD
       run: |
         argocd login ${{ secrets.ARGOCD_SERVER }} \
