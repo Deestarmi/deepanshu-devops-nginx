@@ -1,0 +1,80 @@
+name: CI - Build and Update Image Tag
+on:
+  push:
+    branches: [main]
+    paths:
+    - 'app/**'    # only trigger when you changes app files
+    - 'Dockerfile'
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{secrets.GITHUB_TOKEN}} # needed to push back to repo
+
+# Read the version file to build the image tag
+# Tag fromat 
+    - name: Set image tag
+      id: tag
+      run: |
+        VERSION=$(cat VERSION)
+        SHORT_SHA=${GITHUB_SHA::8}
+        echo "IMAGE_TAG=${VERSION}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+        echo "Building: deestarmi/nginx-demo:${VERSION}-${SHORT_SHA}"
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{secrets.DOCKER_USERNAME}}
+        password: ${{secrets.DOCKERHUB_TOKEN}}
+    
+    - name: Build Docker image
+      run: |
+        docker build -t deestarmi/nginx-demo:${{ steps.tag.outputs.IMAGE_TAG }} .
+    
+    - name: Push to Docker Hub
+      run: |  
+        docker push deestarmi/nginx-demo:${{steps.tag.outputs.IMAGE_TAG}}
+
+    - name: Update the Helm values.yaml with new image tag
+      run: |
+        sed -i "s|tag: \".*\"|tag: \"${{ steps.tag.outputs.IMAGE_TAG }}\"|" \
+          helm/nginx-demo/values.yaml
+    # Commit and push the update values.yaml back to the repo
+    - name: Commit update values.yaml
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+        git add helm/nginx-demo/values.yaml
+        git commit -m "chore: update image tag to ${{ steps.tag.outputs.IMAGE_TAG }} [skip ci]"
+        git push
+    
+    - name: Set kubeconfig
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+        
+    ## Login to Argocd ##
+    - name: Login to Argocd
+      run: |
+        argocd login ${{secrets.ARGOCD_SERVER}} --username admin --password ${{secrets.ARGOCD_PASSWORD}} --insecure --grpc-web
+    
+    - name: Apply ArgoCD Application
+      run: |
+        kubectl apply -f argocd/argocd.yaml
+
+    - name: Wait for Application
+      run: |
+        kubectl get application nginx-demo -n argocd
+    
+  ## confirm deployment is healthy
+    - name: Sync ArgoCD app
+      run: |
+        argocd app sync nginx-demo  --insecure --grpc-web --watch
+  ## confirm deployment is healthy
+    - name: verify app health
+      run: |
+        argocd app get nginx-demo --insecure --grpc-web
