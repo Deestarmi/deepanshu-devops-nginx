@@ -19,6 +19,9 @@ jobs:
     - name: Set image tag
       id: tag
       run: |
+        pwd
+        ls -la
+        find . -name "VERSION"
         VERSION=$(cat VERSION)
         SHORT_SHA=${GITHUB_SHA::8}
         echo "IMAGE_TAG=${VERSION}-${SHORT_SHA}" >> $GITHUB_OUTPUT
