@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Deestarmi/nginx-gitops
+    repoURL: https://github.com/Deestarmi/deepanshu-devops-nginx.git
     targetRevision: main
     path: helm/nginx-demo
     helm: 
