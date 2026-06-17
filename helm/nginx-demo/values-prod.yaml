@@ -1,7 +1,7 @@
 replicaCount: 1
 image:
   repository: deestar08/nginx-demo
-  tag: "v1.0-initial"
+  tag: "v1.0.100-454dd83c"
   pullPolicy: Always
 service:
   type: LoadBalancer
