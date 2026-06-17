@@ -1,9 +1,9 @@
 replicaCount: 1
 image:
   repository: deestar08/nginx-demo
-  tag: "v1.0-2c234ae3"
-  pullPolicy: "Always"
+  tag: "v1.0-initial"
+  pullPolicy: Always
 service:
   type: LoadBalancer
   port: 80
-namespace: prod
+namespace: dev
