@@ -70,14 +70,62 @@ jobs:
           --username admin --password ${{ secrets.ARGOCD_PASSWORD }} \
           --insecure --grpc-web
 
-    - name: Sync DEV app
+    - name: Install ArgoCD CLI
       run: |
-        argocd app sync nginx-demo-dev --insecure --grpc-web --timeout 120
+        ARGOCD_VERSION=$(curl -s https://api.github.com/repos/argoproj/argo-cd/releases/latest \
+          | grep '"tag_name"' | cut -d'"' -f4)
+        echo "Installing ArgoCD $ARGOCD_VERSION"
+        curl -sSL -o /usr/local/bin/argocd \
+          https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
+        chmod +x /usr/local/bin/argocd
+        argocd version --client
 
-    - name: Wait for DEV to be healthy
+    - name: Terminate any stuck operation
       run: |
-        argocd app wait nginx-demo-dev --health --timeout 120 --insecure --grpc-web
+        argocd app terminate-op nginx-demo \
+        --insecure \
+        --grpc-web || true
 
+    - name: Login to ArgoCD
+      run: |
+        argocd login ${{ secrets.ARGOCD_SERVER }} \
+          --username admin \
+          --password ${{ secrets.ARGOCD_PASSWORD }} \
+          --insecure \
+          --grpc-web
+
+    - name: Apply ArgoCD Application
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+        kubectl apply -f argocd/argocd-dev.yaml
+    
+    - name: Register repo with ArgoCD
+      run: |
+        argocd repo add https://github.com/${{ github.repository }} \
+        --username ${{ github.repository_owner }} \
+        --password ${{ secrets.GIT_PAT }} \
+        --insecure \
+        --grpc-web \
+        --upsert
+
+
+    - name: Sync ArgoCD app
+      run: |
+        # Force ArgoCD to re-authenticate and fetch the latest commit refs
+        argocd app get nginx-demo --refresh --insecure --grpc-web
+        argocd app sync nginx-demo \
+        --insecure \
+        --grpc-web \
+        --timeout 120
+
+    - name: Verify app health
+      run: |
+        argocd app wait nginx-demo \
+        --health \
+        --timeout 120 \
+        --insecure \
+        --grpc-web
 
   # ───────────────────────────────────────────────
   # JOB 2: Deploy to PROD — PAUSES for human approval
@@ -121,10 +169,59 @@ jobs:
           --username admin --password ${{ secrets.ARGOCD_PASSWORD }} \
           --insecure --grpc-web
 
-    - name: Sync PROD app
+    - name: Install ArgoCD CLI
       run: |
-        argocd app sync nginx-demo-prod --insecure --grpc-web --timeout 120
+        ARGOCD_VERSION=$(curl -s https://api.github.com/repos/argoproj/argo-cd/releases/latest \
+          | grep '"tag_name"' | cut -d'"' -f4)
+        echo "Installing ArgoCD $ARGOCD_VERSION"
+        curl -sSL -o /usr/local/bin/argocd \
+          https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
+        chmod +x /usr/local/bin/argocd
+        argocd version --client
 
-    - name: Wait for PROD to be healthy
+    - name: Terminate any stuck operation
       run: |
-        argocd app wait nginx-demo-prod --health --timeout 120 --insecure --grpc-web
+        argocd app terminate-op nginx-demo \
+        --insecure \
+        --grpc-web || true
+
+    - name: Login to ArgoCD
+      run: |
+        argocd login ${{ secrets.ARGOCD_SERVER }} \
+          --username admin \
+          --password ${{ secrets.ARGOCD_PASSWORD }} \
+          --insecure \
+          --grpc-web
+
+    - name: Apply ArgoCD Application
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+        kubectl apply -f argocd/argocd-prod.yaml
+    
+    - name: Register repo with ArgoCD
+      run: |
+        argocd repo add https://github.com/${{ github.repository }} \
+        --username ${{ github.repository_owner }} \
+        --password ${{ secrets.GIT_PAT }} \
+        --insecure \
+        --grpc-web \
+        --upsert
+
+
+    - name: Sync ArgoCD app
+      run: |
+        # Force ArgoCD to re-authenticate and fetch the latest commit refs
+        argocd app get nginx-demo --refresh --insecure --grpc-web
+        argocd app sync nginx-demo \
+        --insecure \
+        --grpc-web \
+        --timeout 120
+
+    - name: Verify app health
+      run: |
+        argocd app wait nginx-demo \
+        --health \
+        --timeout 120 \
+        --insecure \
+        --grpc-web
