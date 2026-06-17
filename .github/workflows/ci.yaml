@@ -1,5 +1,6 @@
-name: CI/CD - Dev auto-deploy, Prod manual approval
 
+name: CI/CD - Dev auto-deploy, Prod manual approval
+ 
 on:
   push:
     branches: [main]
@@ -7,9 +8,9 @@ on:
       - 'app/**'
       - 'Dockerfile'
       - 'VERSION'
-
+ 
 jobs:
-
+ 
   # ───────────────────────────────────────────────
   # JOB 1: Build once, deploy to DEV automatically
   # ───────────────────────────────────────────────
@@ -17,38 +18,38 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.tag.outputs.IMAGE_TAG }}
-
+ 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-
+ 
     - name: Set image tag
       id: tag
       run: |
         VERSION=$(cat VERSION)
         SHORT_SHA=${GITHUB_SHA::8}
         echo "IMAGE_TAG=${VERSION}-${SHORT_SHA}" >> $GITHUB_OUTPUT
-
+ 
     - name: Login to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-
+ 
     - name: Build and push image
       run: |
         docker build -t deestar08/nginx-demo:${{ steps.tag.outputs.IMAGE_TAG }} .
         docker push deestar08/nginx-demo:${{ steps.tag.outputs.IMAGE_TAG }}
-
+ 
     # Only update DEV values — prod untouched at this stage
     - name: Update values-dev.yaml
       run: |
         sed -i "s|tag:.*|tag: \"${{ steps.tag.outputs.IMAGE_TAG }}\"|" \
           helm/nginx-demo/values-dev.yaml
         cat helm/nginx-demo/values-dev.yaml
-
+ 
     - name: Commit values-dev.yaml
       run: |
         git config user.name "github-actions[bot]"
@@ -57,19 +58,8 @@ jobs:
         git add helm/nginx-demo/values-dev.yaml
         git commit -m "chore(dev): bump image tag to ${{ steps.tag.outputs.IMAGE_TAG }} [skip ci]"
         git push
-
-    - name: Install ArgoCD CLI
-      run: |
-        curl -sSL -o /usr/local/bin/argocd \
-          https://github.com/argoproj/argo-cd/releases/download/v2.13.3/argocd-linux-amd64
-        chmod +x /usr/local/bin/argocd
-
-    - name: Login to ArgoCD
-      run: |
-        argocd login ${{ secrets.ARGOCD_SERVER }} \
-          --username admin --password ${{ secrets.ARGOCD_PASSWORD }} \
-          --insecure --grpc-web
-
+ 
+    # ONE install step only — auto-detects latest version
     - name: Install ArgoCD CLI
       run: |
         ARGOCD_VERSION=$(curl -s https://api.github.com/repos/argoproj/argo-cd/releases/latest \
@@ -79,13 +69,8 @@ jobs:
           https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
         chmod +x /usr/local/bin/argocd
         argocd version --client
-
-    - name: Terminate any stuck operation
-      run: |
-        argocd app terminate-op nginx-demo \
-        --insecure \
-        --grpc-web || true
-
+ 
+    # ONE login step only
     - name: Login to ArgoCD
       run: |
         argocd login ${{ secrets.ARGOCD_SERVER }} \
@@ -93,40 +78,44 @@ jobs:
           --password ${{ secrets.ARGOCD_PASSWORD }} \
           --insecure \
           --grpc-web
-
-    - name: Apply ArgoCD Application
+ 
+    # Repo registration MUST happen before applying any Application that reads from it
+    # No username/password needed — repo is public
+    - name: Register repo with ArgoCD
+      run: |
+        argocd repo add https://github.com/${{ github.repository }} \
+          --insecure \
+          --grpc-web \
+          --upsert
+ 
+    - name: Apply ArgoCD dev Application
       run: |
         mkdir -p ~/.kube
         echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
         kubectl apply -f argocd/argocd-dev.yaml
-    
-    - name: Register repo with ArgoCD
+ 
+    - name: Terminate any stuck operation
       run: |
-        argocd repo add https://github.com/${{ github.repository }} \
-        --username ${{ github.repository_owner }} \
-        --password ${{ secrets.GIT_PAT }} \
-        --insecure \
-        --grpc-web \
-        --upsert
-
-
-    - name: Sync ArgoCD app
+        argocd app terminate-op nginx-demo-dev \
+          --insecure \
+          --grpc-web || true
+ 
+    - name: Refresh and sync DEV app
       run: |
-        # Force ArgoCD to re-authenticate and fetch the latest commit refs
-        argocd app get nginx-demo --refresh --insecure --grpc-web
-        argocd app sync nginx-demo \
-        --insecure \
-        --grpc-web \
-        --timeout 120
-
-    - name: Verify app health
+        argocd app get nginx-demo-dev --refresh --insecure --grpc-web
+        argocd app sync nginx-demo-dev \
+          --insecure \
+          --grpc-web \
+          --timeout 120
+ 
+    - name: Verify DEV app health
       run: |
-        argocd app wait nginx-demo \
-        --health \
-        --timeout 120 \
-        --insecure \
-        --grpc-web
-
+        argocd app wait nginx-demo-dev \
+          --health \
+          --timeout 120 \
+          --insecure \
+          --grpc-web
+ 
   # ───────────────────────────────────────────────
   # JOB 2: Deploy to PROD — PAUSES for human approval
   # ───────────────────────────────────────────────
@@ -134,20 +123,20 @@ jobs:
     needs: build-and-deploy-dev      # only runs if dev succeeded
     runs-on: ubuntu-latest
     environment: production           # ← THIS triggers the approval pause
-
+ 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-
+ 
     # Same tag that was just verified healthy in dev
     - name: Update values-prod.yaml
       run: |
         sed -i "s|tag:.*|tag: \"${{ needs.build-and-deploy-dev.outputs.image_tag }}\"|" \
           helm/nginx-demo/values-prod.yaml
         cat helm/nginx-demo/values-prod.yaml
-
+ 
     - name: Commit values-prod.yaml
       run: |
         git config user.name "github-actions[bot]"
@@ -156,35 +145,15 @@ jobs:
         git add helm/nginx-demo/values-prod.yaml
         git commit -m "chore(prod): promote image tag ${{ needs.build-and-deploy-dev.outputs.image_tag }} [skip ci]"
         git push
-
-    - name: Install ArgoCD CLI
-      run: |
-        curl -sSL -o /usr/local/bin/argocd \
-          https://github.com/argoproj/argo-cd/releases/download/v2.13.3/argocd-linux-amd64
-        chmod +x /usr/local/bin/argocd
-
-    - name: Login to ArgoCD
-      run: |
-        argocd login ${{ secrets.ARGOCD_SERVER }} \
-          --username admin --password ${{ secrets.ARGOCD_PASSWORD }} \
-          --insecure --grpc-web
-
+ 
     - name: Install ArgoCD CLI
       run: |
         ARGOCD_VERSION=$(curl -s https://api.github.com/repos/argoproj/argo-cd/releases/latest \
           | grep '"tag_name"' | cut -d'"' -f4)
-        echo "Installing ArgoCD $ARGOCD_VERSION"
         curl -sSL -o /usr/local/bin/argocd \
           https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
         chmod +x /usr/local/bin/argocd
-        argocd version --client
-
-    - name: Terminate any stuck operation
-      run: |
-        argocd app terminate-op nginx-demo \
-        --insecure \
-        --grpc-web || true
-
+ 
     - name: Login to ArgoCD
       run: |
         argocd login ${{ secrets.ARGOCD_SERVER }} \
@@ -192,36 +161,38 @@ jobs:
           --password ${{ secrets.ARGOCD_PASSWORD }} \
           --insecure \
           --grpc-web
-
-    - name: Apply ArgoCD Application
+ 
+    - name: Register repo with ArgoCD
+      run: |
+        argocd repo add https://github.com/${{ github.repository }} \
+          --insecure \
+          --grpc-web \
+          --upsert
+ 
+    - name: Apply ArgoCD prod Application
       run: |
         mkdir -p ~/.kube
         echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
         kubectl apply -f argocd/argocd-prod.yaml
-    
-    - name: Register repo with ArgoCD
+ 
+    - name: Terminate any stuck operation
       run: |
-        argocd repo add https://github.com/${{ github.repository }} \
-        --username ${{ github.repository_owner }} \
-        --password ${{ secrets.GIT_PAT }} \
-        --insecure \
-        --grpc-web \
-        --upsert
-
-
-    - name: Sync ArgoCD app
+        argocd app terminate-op nginx-demo-prod \
+          --insecure \
+          --grpc-web || true
+ 
+    - name: Refresh and sync PROD app
       run: |
-        # Force ArgoCD to re-authenticate and fetch the latest commit refs
-        argocd app get nginx-demo --refresh --insecure --grpc-web
-        argocd app sync nginx-demo \
-        --insecure \
-        --grpc-web \
-        --timeout 120
-
-    - name: Verify app health
+        argocd app get nginx-demo-prod --refresh --insecure --grpc-web
+        argocd app sync nginx-demo-prod \
+          --insecure \
+          --grpc-web \
+          --timeout 120
+ 
+    - name: Verify PROD app health
       run: |
-        argocd app wait nginx-demo \
-        --health \
-        --timeout 120 \
-        --insecure \
-        --grpc-web
+        argocd app wait nginx-demo-prod \
+          --health \
+          --timeout 120 \
+          --insecure \
+          --grpc-web
